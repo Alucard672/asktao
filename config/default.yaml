@@ -1,0 +1,29 @@
+# The first version supports only a 886x672 game window.
+window:
+  title: 问道
+  width: 886
+  height: 672
+
+safety:
+  min_confidence: 0.88
+  max_unchanged_actions: 3
+
+timeouts:
+  action: 12.0
+  battle: 120.0
+
+notification:
+  recipient: wendao-owner@example.com
+
+blocked_states:
+  - payment
+  - captcha
+  - blocked_choice
+  - dead
+  - bag_full
+  - disconnected
+
+daily_whitelist:
+  - 师门
+  - 除暴
+  - 修行

@@ -1,0 +1,12 @@
+.worktrees/
+runtime/
+.venv/
+.venv-win/
+__pycache__/
+.pytest_cache/
+*.pyc
+/build/
+/dist/
+/src/*.egg-info/
+*.spec.bak
+.DS_Store

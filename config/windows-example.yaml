@@ -1,0 +1,20 @@
+# Windows(安卓模拟器)示例配置。
+#
+# 手游《问道》跑在模拟器里时,本工具校验的是"模拟器窗口":
+# - title:模拟器窗口标题,必须与实际标题完全一致且在系统中唯一。
+#   建议在模拟器的多开管理里给实例改一个独一无二的名字。
+# - owner:模拟器进程的可执行文件名(任务管理器 → 详细信息里确认),
+#   Windows 上必须填写,常见值:
+#     MuMu模拟器12   → MuMuPlayer.exe(旧版为 MuMuNxDevice.exe / NemuPlayer.exe)
+#     雷电模拟器      → dnplayer.exe
+#     夜神模拟器      → Nox.exe
+#     BlueStacks     → HD-Player.exe
+# - width/height:模拟器窗口"客户区"的物理像素尺寸,必须与实际完全一致。
+#   在模拟器设置里固定分辨率与窗口大小、关闭 DPI 缩放干扰后,
+#   先运行一次工具,几何不匹配的报错会显示实际检测到的宽高,照抄进来即可。
+#   之后必须按这个尺寸重新采集全部识别模板。
+window:
+  title: MuMu模拟器12
+  owner: MuMuPlayer.exe
+  width: 1600
+  height: 900

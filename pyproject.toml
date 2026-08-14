@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wendao-foreground-helper"
+version = "0.2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "opencv-python>=4.10,<5",
+    "Pillow>=10,<12",
+    "PyYAML>=6,<7",
+    "mss>=9,<11",
+    "pyobjc-framework-Quartz>=10,<12; sys_platform == 'darwin'",
+    "pyobjc-framework-Vision>=10,<12; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa>=10,<12; sys_platform == 'darwin'",
+    "winsdk>=1.0; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+app = ["PyInstaller>=6.10,<7"]
+
+[project.scripts]
+wendao-bot = "wendao_bot.cli:main"
+
+[project.gui-scripts]
+wendao-app = "wendao_bot.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wendao_bot = ["default.yaml", "templates/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

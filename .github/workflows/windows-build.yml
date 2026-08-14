@@ -1,0 +1,36 @@
+name: windows-build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test-and-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # build_app.ps1 and the packaging contract test expect the pinned
+      # project venv at .venv\Scripts\python.exe
+      - name: Create project venv
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python -m pip install --upgrade pip
+          .venv\Scripts\python -m pip install -e ".[app,test]"
+
+      - name: Run test suite
+        run: .venv\Scripts\python -m pytest -v
+
+      - name: Build Windows app
+        run: powershell -ExecutionPolicy Bypass -File scripts\build_app.ps1
+
+      - name: Upload packaged app
+        uses: actions/upload-artifact@v4
+        with:
+          name: wendao-helper-win
+          path: dist/问道前台助手-win.zip
+          if-no-files-found: error
