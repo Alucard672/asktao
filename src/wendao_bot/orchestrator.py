@@ -9,7 +9,7 @@ import hashlib
 from pathlib import Path
 import time
 import threading
-from typing import Callable
+from typing import Callable, Mapping
 
 from .models import ActionKind, ScreenSnapshot, ScreenState
 from .notifier import PauseNotice
@@ -77,6 +77,7 @@ class Orchestrator:
         store,
         progress,
         *,
+        keymap: Mapping[str, str] | None = None,
         progress_extractor=None,
         progress_min_confidence: float = 0.88,
         stop_event: threading.Event | None = None,
@@ -95,6 +96,7 @@ class Orchestrator:
         self.notifier = notifier
         self.store = store
         self.progress = progress
+        self.keymap = dict(keymap or {})
         self.progress_extractor = progress_extractor
         self.progress_min_confidence = progress_min_confidence
         self.stop_event = stop_event or threading.Event()
@@ -192,17 +194,30 @@ class Orchestrator:
             return before
         if action.kind is ActionKind.WAIT:
             return self._handle_wait(before, action.wait_seconds)
+        if action.kind is ActionKind.KEY:
+            key = self.keymap.get(action.target) if action.target else None
+            if key is None:
+                self._pause(f"keymap has no entry for {action.target!r}", before)
+                return before
+            return self._send_input(
+                lambda: self.session.send_key(key), action, before, before_bytes
+            )
         if action.kind is not ActionKind.CLICK or coordinate is None:
             self._pause("planner returned invalid input action", before)
             return before
 
+        return self._send_input(
+            lambda: self.session.click(*coordinate), action, before, before_bytes
+        )
+
+    def _send_input(self, deliver, action, before, before_bytes: bytes):
         self._wait_state = None
         self._wait_started = None
         if self.stop_event.is_set() or self._flag("stop"):
             self.status = RunStatus.STOPPED
             return before
         try:
-            self.session.click(*coordinate)
+            deliver()
             after = self._verify_click(action, before, before_bytes)
         except Exception as exc:
             self._pause(f"input verification failed: {type(exc).__name__}", before)
@@ -233,6 +248,8 @@ class Orchestrator:
         expected = ",".join(sorted(state.value for state in action.allowed_expected)) or "changed safe state"
         self._pause(f"expected one of {expected}, observed {after.state.value}", after)
         return after
+
+    _verify_action = _verify_click
 
     def _handle_wait(
         self, snapshot: ScreenSnapshot, requested_wait: float

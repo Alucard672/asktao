@@ -28,6 +28,8 @@ class WindowBackend(Protocol):
 
     def focus_and_click(self, target: WindowInfo, x: int, y: int) -> None: ...
 
+    def send_key(self, target: WindowInfo, key: str) -> None: ...
+
 
 class GameSession:
     def __init__(
@@ -104,6 +106,12 @@ class GameSession:
             )
         window = self._resolve()
         self.backend.focus_and_click(window, x, y)
+
+    def send_key(self, key: str) -> None:
+        if not isinstance(key, str) or len(key) != 1:
+            raise ValueError(f"key must be a single character, got {key!r}")
+        window = self._resolve()
+        self.backend.send_key(window, key)
 
     def capture_to(self, path: Path) -> Path:
         destination = Path(path)
@@ -235,6 +243,9 @@ class QuartzBackend:
             raise RuntimeError("could not create mouse click events")
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, down)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, up)
+
+    def send_key(self, target: WindowInfo, key: str) -> None:
+        raise RuntimeError("keyboard input is not implemented on macOS")
 
     def _target_is_topmost_at(
         self, target: WindowInfo, point: tuple[int, int]

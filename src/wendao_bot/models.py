@@ -23,6 +23,7 @@ class ScreenState(Enum):
 
 class ActionKind(Enum):
     CLICK = "click"
+    KEY = "key"
     WAIT = "wait"
     PAUSE = "pause"
 

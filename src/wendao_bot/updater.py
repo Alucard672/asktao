@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.request import urlopen
 
-VERSION_CODE = 6
+VERSION_CODE = 7
 DEFAULT_MANIFEST_URL = "https://ota.alucard.top/wendao/version.json"
 _TIMEOUT_SECONDS = 10.0
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")

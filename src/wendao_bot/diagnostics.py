@@ -186,6 +186,22 @@ def run_diagnostics(
     except Exception as error:
         _record(lines, "模板", False, f"{type(error).__name__}: {error}")
 
+    if config is not None:
+        try:
+            from .app_service import build_app_runner
+
+            runner = build_app_runner(config_path, Path(runtime_dir), observe_only=True)
+            result = runner.step()
+            _record(
+                lines, "观察单步", True,
+                f"status={runner.status.value} state={result.state.value} "
+                f"confidence={result.observed.confidence:.2f} "
+                f"pause_reason={getattr(runner, 'pause_reason', None) or '—'}",
+            )
+        except Exception as error:
+            _record(lines, "观察单步", False, f"{type(error).__name__}: {error}")
+            failures.append(traceback.format_exc())
+
     if failures:
         lines.append("")
         lines.append("=== 失败详情(traceback) ===")

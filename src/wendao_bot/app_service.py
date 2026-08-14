@@ -99,6 +99,20 @@ def template_path() -> Path:
     return Path(files("wendao_bot").joinpath("templates"))
 
 
+def resolve_template_dir(runtime: Path) -> Path:
+    candidate = Path(runtime) / "templates"
+    try:
+        if (
+            candidate.is_dir()
+            and not candidate.is_symlink()
+            and any(candidate.glob("*.png"))
+        ):
+            return candidate
+    except OSError:
+        pass
+    return template_path()
+
+
 def load_progress(store: RuntimeStore) -> Progress:
     raw = store.load_state().get("progress")
     if not isinstance(raw, dict):
@@ -159,7 +173,7 @@ def build_runner(
     return Orchestrator(
         session=_platform_session(config),
         recognizer=ScreenRecognizer(
-            template_dir=template_path(),
+            template_dir=resolve_template_dir(runtime),
             match_threshold=config.min_confidence,
             daily_whitelist=config.daily_whitelist,
         ),
@@ -170,6 +184,7 @@ def build_runner(
         ),
         store=store,
         progress=progress,
+        keymap=dict(getattr(config, "keymap", ()) or ()),
         progress_extractor=ProgressExtractor(config.daily_whitelist),
         progress_min_confidence=config.min_confidence,
         stop_event=stop_event,
@@ -666,6 +681,7 @@ class AppService:
                 if not stopped:
                     self._publish(self.current_state.with_single_step_success())
         except Exception as exc:
+            self._log_worker_error(exc)
             self._publish(_bounded_worker_error(exc, mode=mode.value))
         finally:
             with self._state_lock:
@@ -674,6 +690,26 @@ class AppService:
                 )
             if explicitly_stopped:
                 self._publish(AppViewState.stopped())
+
+    def _log_worker_error(self, error: BaseException) -> None:
+        import traceback
+
+        try:
+            self.runtime.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).isoformat()
+            with (self.runtime / "worker-errors.txt").open(
+                "a", encoding="utf-8"
+            ) as stream:
+                stream.write(f"\n=== {stamp} ===\n")
+                stream.write(
+                    "".join(
+                        traceback.format_exception(
+                            type(error), error, error.__traceback__
+                        )
+                    )
+                )
+        except OSError:
+            pass
 
     def _publish(self, state: AppViewState) -> None:
         self.current_state = state

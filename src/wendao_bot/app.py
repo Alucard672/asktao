@@ -466,6 +466,7 @@ class TkView:
         "notification_preview": "通知预览",
         "check_update": "检查更新",
         "diagnose": "诊断",
+        "capture_template": "采集模板",
     }
     _BUTTON_ACTIONS = {
         "observe": "observe",
@@ -566,6 +567,284 @@ class TkView:
         tk.Button(window, text="关闭", width=10, command=window.destroy).pack(
             pady=(0, 8)
         )
+
+    def run_capture_flow(self, service) -> None:
+        import queue
+        import threading
+        from tkinter import messagebox
+
+        if getattr(self, "_capturing", False):
+            return
+        self._capturing = True
+        self.buttons["capture_template"].configure(state="disabled", text="截屏中…")
+        results: queue.Queue = queue.Queue(maxsize=1)
+        config_path = service.config_path
+
+        def work() -> None:
+            try:
+                from .config import load_config
+                from .session import GameSession
+
+                config = load_config(config_path)
+                if sys.platform == "win32":
+                    from .session_windows import Win32Backend
+
+                    backend = Win32Backend()
+                else:
+                    from .session import QuartzBackend
+
+                    backend = QuartzBackend()
+                owner = config.window_owner or (
+                    "asktao.exe" if sys.platform == "win32" else "问道"
+                )
+                session = GameSession(
+                    backend,
+                    config.window_title,
+                    config.width,
+                    config.height,
+                    None,
+                    owner,
+                )
+                results.put(("ok", (config, session.capture())))
+            except Exception as error:
+                results.put(("error", error))
+
+        threading.Thread(target=work, name="wendao-capture", daemon=True).start()
+
+        def finish() -> None:
+            if self._destroyed:
+                return
+            try:
+                kind, payload = results.get_nowait()
+            except queue.Empty:
+                self.root.after(200, finish)
+                return
+            self._capturing = False
+            self.buttons["capture_template"].configure(
+                state="normal", text="采集模板"
+            )
+            if kind == "error":
+                messagebox.showerror(
+                    "采集模板", f"截屏失败：{payload}", parent=self.root
+                )
+                return
+            config, image_bytes = payload
+            self._show_capture_editor(service, config, image_bytes)
+
+        self.root.after(200, finish)
+
+    def _show_capture_editor(self, service, config, image_bytes) -> None:
+        import io
+        import queue
+        import threading
+        import tkinter as tk
+        from tkinter import messagebox, ttk
+
+        from PIL import Image, ImageTk
+
+        from . import template_capture
+
+        image = Image.open(io.BytesIO(image_bytes))
+        scale = 1.0
+        display = image
+        if image.width > 900:
+            scale = 900 / image.width
+            display = image.resize((900, max(1, round(image.height * scale))))
+        window = tk.Toplevel(self.root)
+        window.title("采集模板")
+        window.transient(self.root)
+        photo = ImageTk.PhotoImage(display, master=window)
+        window._capture_photo = photo
+        tk.Label(
+            window,
+            text="在截图上拖拽画出红框选区，然后填写信息并保存。",
+            anchor="w",
+        ).pack(fill="x", padx=8, pady=(8, 0))
+        canvas = tk.Canvas(
+            window, width=display.width, height=display.height, cursor="cross"
+        )
+        canvas.pack(padx=8, pady=8)
+        canvas.create_image(0, 0, image=photo, anchor="nw")
+        selection = {"start": None, "box": None, "rect": None}
+
+        def clamp(value, limit):
+            return min(max(int(value), 0), limit)
+
+        def press(event) -> None:
+            selection["start"] = (
+                clamp(event.x, display.width),
+                clamp(event.y, display.height),
+            )
+
+        def drag(event) -> None:
+            if selection["start"] is None:
+                return
+            x0, y0 = selection["start"]
+            x1 = clamp(event.x, display.width)
+            y1 = clamp(event.y, display.height)
+            if selection["rect"] is not None:
+                canvas.delete(selection["rect"])
+            selection["rect"] = canvas.create_rectangle(
+                x0, y0, x1, y1, outline="red", width=2
+            )
+            selection["box"] = (
+                min(x0, x1),
+                min(y0, y1),
+                abs(x1 - x0),
+                abs(y1 - y0),
+            )
+
+        canvas.bind("<ButtonPress-1>", press)
+        canvas.bind("<B1-Motion>", drag)
+        canvas.bind("<ButtonRelease-1>", drag)
+
+        def original_box():
+            if not selection["box"]:
+                return None
+            x, y, w, h = selection["box"]
+            left = clamp(round(x / scale), image.width)
+            top = clamp(round(y / scale), image.height)
+            right = clamp(round((x + w) / scale), image.width)
+            bottom = clamp(round((y + h) / scale), image.height)
+            if right <= left or bottom <= top:
+                return None
+            return (left, top, right - left, bottom - top)
+
+        form = tk.Frame(window, padx=8, pady=4)
+        form.pack(fill="x")
+        tk.Label(form, text="状态：", width=10, anchor="w").grid(
+            row=0, column=0, sticky="w"
+        )
+        state_var = tk.StringVar(master=window, value="map")
+        ttk.Combobox(
+            form,
+            textvariable=state_var,
+            values=(
+                "map",
+                "npc_options",
+                "dialogue",
+                "auto_path",
+                "battle",
+                "reward",
+                "activity_list",
+            ),
+            state="readonly",
+            width=16,
+        ).grid(row=0, column=1, sticky="w")
+        tk.Label(form, text="目标名：", width=10, anchor="w").grid(
+            row=1, column=0, sticky="w"
+        )
+        target_var = tk.StringVar(master=window)
+        tk.Entry(form, textvariable=target_var, width=18).grid(
+            row=1, column=1, sticky="w"
+        )
+        tk.Label(form, text="日常目标：", width=10, anchor="w").grid(
+            row=2, column=0, sticky="w"
+        )
+        daily_var = tk.StringVar(master=window, value="")
+        ttk.Combobox(
+            form,
+            textvariable=daily_var,
+            values=("",) + tuple(config.daily_whitelist),
+            state="readonly",
+            width=16,
+        ).grid(row=2, column=1, sticky="w")
+        save_button = tk.Button(window, text="保存", width=10)
+        save_button.pack(pady=(4, 8))
+        results: queue.Queue = queue.Queue(maxsize=1)
+
+        def finish() -> None:
+            if self._destroyed or not window.winfo_exists():
+                return
+            try:
+                kind, payload = results.get_nowait()
+            except queue.Empty:
+                self.root.after(200, finish)
+                return
+            if kind == "error":
+                save_button.configure(state="normal", text="保存")
+                if isinstance(payload, template_capture.PrivacyError):
+                    message = f"隐私检查未通过，已拒绝保存：{payload}"
+                elif "OCR" in str(payload):
+                    message = f"OCR 不可用，已拒绝保存：{payload}"
+                else:
+                    message = f"保存失败：{payload}"
+                messagebox.showerror("采集模板", message, parent=window)
+                return
+            total = len(list(payload.parent.glob("*.png")))
+            window.destroy()
+            messagebox.showinfo(
+                "采集模板",
+                f"已保存：\n{payload}\n\n当前用户模板共 {total} 个。\n"
+                "重新开始观察后生效。",
+                parent=self.root,
+            )
+
+        def save() -> None:
+            box = original_box()
+            if box is None:
+                messagebox.showerror(
+                    "采集模板", "请先在截图上拖拽框选区域", parent=window
+                )
+                return
+            daily = daily_var.get()
+            target = f"daily_{daily}" if daily else target_var.get().strip()
+            if not target:
+                messagebox.showerror(
+                    "采集模板", "请填写目标名或选择日常目标", parent=window
+                )
+                return
+            try:
+                destination_dir = template_capture.user_template_dir(
+                    service.ensure_runtime_directory()
+                )
+            except Exception as error:
+                messagebox.showerror(
+                    "采集模板", f"运行目录不可用：{error}", parent=window
+                )
+                return
+            state = state_var.get()
+            save_button.configure(state="disabled", text="保存中…")
+
+            def work() -> None:
+                try:
+                    def recognize(crop_image):
+                        import tempfile
+
+                        from .recognizer import default_ocr
+
+                        with tempfile.TemporaryDirectory(
+                            prefix="wendao-capture-"
+                        ) as folder:
+                            crop_path = Path(folder) / "crop.png"
+                            crop_image.save(crop_path)
+                            return default_ocr(crop_path)
+
+                    saved = template_capture.save_template(
+                        image_bytes,
+                        box,
+                        state,
+                        target,
+                        "1x",
+                        destination_dir,
+                        recognize,
+                        template_capture.scaled_forbidden_regions(
+                            config.width, config.height
+                        ),
+                        daily_whitelist=config.daily_whitelist,
+                        window_width=config.width,
+                        window_height=config.height,
+                    )
+                    results.put(("ok", saved))
+                except Exception as error:
+                    results.put(("error", error))
+
+            threading.Thread(
+                target=work, name="wendao-capture-save", daemon=True
+            ).start()
+            self.root.after(200, finish)
+
+        save_button.configure(command=save)
 
     def run_update_flow(self, shutdown) -> None:
         import tempfile
@@ -779,6 +1058,9 @@ def _build_tk_app(service: AppService):
     )
     view.buttons["diagnose"].configure(
         command=lambda: view.run_diagnostics_flow(service)
+    )
+    view.buttons["capture_template"].configure(
+        command=lambda: view.run_capture_flow(service)
     )
 
     view.root.protocol("WM_DELETE_WINDOW", on_close)

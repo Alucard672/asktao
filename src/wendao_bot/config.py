@@ -27,6 +27,10 @@ class BotConfig:
     blocked_states: frozenset[str]
     daily_whitelist: tuple[str, ...]
     window_owner: str | None = None
+    keymap: tuple[tuple[str, str], ...] = (
+        ("story_skip", "`"),
+        ("task_pathfind", "t"),
+    )
 
 
 DEFAULTS = {
@@ -43,6 +47,7 @@ DEFAULTS = {
         "disconnected",
     ],
     "daily_whitelist": ["师门", "除暴", "修行"],
+    "keymap": {"story_skip": "`", "task_pathfind": "t"},
 }
 
 _MAPPING_SECTIONS = ("window", "safety", "timeouts", "notification")
@@ -104,6 +109,23 @@ def _require_daily_names(value: Any) -> tuple[str, ...]:
     if len(set(names)) != len(names):
         raise ConfigError("daily_whitelist must contain unique names")
     return tuple(names)
+
+
+def _require_keymap(value: Any) -> tuple[tuple[str, str], ...]:
+    mapping = _require_mapping(value, "keymap")
+    for name, key in mapping.items():
+        if not is_safe_daily_name(name):
+            raise ConfigError(
+                "keymap names must be 1-32 alphanumeric, underscore, or hyphen characters"
+            )
+        if not (
+            isinstance(key, str)
+            and len(key) == 1
+            and key.isascii()
+            and key.isprintable()
+        ):
+            raise ConfigError("keymap values must be single printable ASCII characters")
+    return tuple(sorted((str(name), str(key)) for name, key in mapping.items()))
 
 
 def _read_config(path: Path | None) -> str:
@@ -169,4 +191,5 @@ def load_config(path: Path | None = None) -> BotConfig:
             _require_string_list(data["blocked_states"], "blocked_states")
         ),
         daily_whitelist=_require_daily_names(data["daily_whitelist"]),
+        keymap=_require_keymap(data["keymap"]),
     )

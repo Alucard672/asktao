@@ -10,7 +10,7 @@ class UnsafeAction(RuntimeError):
 
 class SafetyGuard:
     ALLOWED_ACTION_KINDS = frozenset(
-        {ActionKind.CLICK, ActionKind.WAIT, ActionKind.PAUSE}
+        {ActionKind.CLICK, ActionKind.KEY, ActionKind.WAIT, ActionKind.PAUSE}
     )
     CLICKABLE_STATES = frozenset(
         {
@@ -67,6 +67,13 @@ class SafetyGuard:
                 f"snapshot confidence {snapshot.confidence:.2f} is below minimum "
                 f"{self._min_confidence:.2f}"
             )
+
+        if action.kind is ActionKind.KEY:
+            if snapshot.state not in self.CLICKABLE_STATES:
+                raise UnsafeAction(f"key input forbidden in state {snapshot.state.value}")
+            if action.target is None:
+                raise UnsafeAction("key target is required")
+            return None
 
         if action.kind is not ActionKind.CLICK:
             return None

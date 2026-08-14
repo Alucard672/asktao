@@ -10,8 +10,10 @@ _PER_MONITOR_AWARE_V2 = -4
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _GA_ROOT = 2
 _INPUT_MOUSE = 0
+_INPUT_KEYBOARD = 1
 _MOUSEEVENTF_LEFTDOWN = 0x0002
 _MOUSEEVENTF_LEFTUP = 0x0004
+_KEYEVENTF_KEYUP = 0x0002
 _IMAGE_NAME_CAPACITY = 32767
 _TITLE_CAPACITY = 512
 
@@ -66,13 +68,35 @@ class _Win32Api:
                 ("dwExtraInfo", ctypes.c_size_t),
             ]
 
+        class KeyboardInput(ctypes.Structure):
+            _fields_ = [
+                ("wVk", wintypes.WORD),
+                ("wScan", wintypes.WORD),
+                ("dwFlags", wintypes.DWORD),
+                ("time", wintypes.DWORD),
+                ("dwExtraInfo", ctypes.c_size_t),
+            ]
+
+        class InputUnion(ctypes.Union):
+            _fields_ = [
+                ("mi", MouseInput),
+                ("ki", KeyboardInput),
+            ]
+
         class Input(ctypes.Structure):
             _fields_ = [
                 ("type", wintypes.DWORD),
                 ("mi", MouseInput),
             ]
 
+        class KeyInput(ctypes.Structure):
+            _fields_ = [
+                ("type", wintypes.DWORD),
+                ("union", InputUnion),
+            ]
+
         self._input_type = Input
+        self._key_input_type = KeyInput
         user32 = self._user32
         kernel32 = self._kernel32
         user32.EnumWindows.argtypes = (self._enum_proc, wintypes.LPARAM)
@@ -118,6 +142,8 @@ class _Win32Api:
             ctypes.c_int,
         )
         user32.SendInput.restype = wintypes.UINT
+        user32.VkKeyScanW.argtypes = (wintypes.WCHAR,)
+        user32.VkKeyScanW.restype = ctypes.c_short
         kernel32.OpenProcess.argtypes = (
             wintypes.DWORD,
             wintypes.BOOL,
@@ -224,6 +250,27 @@ class _Win32Api:
         if int(sent) != 2:
             raise RuntimeError("could not post mouse click events")
 
+    def send_key(self, key: str) -> None:
+        scan = int(self._user32.VkKeyScanW(key))
+        virtual_key = scan & 0xFF
+        if scan == -1 or virtual_key == 0xFF:
+            raise RuntimeError(f"could not resolve virtual key for {key!r}")
+        events = (self._key_input_type * 2)()
+        for event, flags in zip(events, (0, _KEYEVENTF_KEYUP)):
+            event.type = _INPUT_KEYBOARD
+            event.union.ki.wVk = virtual_key
+            event.union.ki.wScan = 0
+            event.union.ki.dwFlags = flags
+        sent = self._user32.SendInput(
+            2,
+            self._ctypes.cast(
+                events, self._ctypes.POINTER(self._input_type)
+            ),
+            self._ctypes.sizeof(self._key_input_type),
+        )
+        if int(sent) != 2:
+            raise RuntimeError("could not post keyboard input events")
+
     def grab_png(
         self, x: int, y: int, width: int, height: int
     ) -> tuple[tuple[int, int], bytes]:
@@ -311,6 +358,21 @@ class Win32Backend:
             raise RuntimeError("target window is covered at click coordinates")
         api.move_cursor(*point)
         api.send_click(*point)
+
+    def send_key(self, target: WindowInfo, key: str) -> None:
+        api = self._win32()
+        handle = target.window_id
+        api.set_foreground(handle)
+        if int(api.foreground_window() or 0) != handle:
+            raise RuntimeError("could not focus window owner application")
+        current = next(
+            (item for item in self.list_windows() if item.window_id == handle),
+            None,
+        )
+        if current != target:
+            raise RuntimeError("window identity or bounds changed after focus")
+        self._assert_target_visible(api, target)
+        api.send_key(key)
 
     def _assert_target_visible(
         self, api, target: WindowInfo, *, require_foreground: bool = True
