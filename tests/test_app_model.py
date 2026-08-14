@@ -556,10 +556,12 @@ def test_unsafe_configured_daily_name_is_never_authorized(unsafe_name) -> None:
 
 
 def test_production_default_screenshot_path_with_parent_spaces_is_preserved() -> None:
-    production_path = (
-        "/Users/test/Library/Application Support/WendaoBot/screens/"
-        "capture-000001.png"
+    production_root = (
+        "C:/Users/test/AppData/Roaming/Wendao Bot"
+        if _os.name == "nt"
+        else "/Users/test/Library/Application Support/WendaoBot"
     )
+    production_path = production_root + "/screens/capture-000001.png"
     step = step_result()
 
     class ProductionStep:
@@ -572,9 +574,7 @@ def test_production_default_screenshot_path_with_parent_spaces_is_preserved() ->
 
     state = AppViewState.from_step(
         ProductionStep(),
-        screenshot_root=Path(
-            "/Users/test/Library/Application Support/WendaoBot/screens"
-        ),
+        screenshot_root=Path(production_root + "/screens"),
     )
 
     assert state.screenshot_path == production_path

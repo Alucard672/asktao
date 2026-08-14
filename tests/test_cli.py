@@ -219,17 +219,19 @@ def test_preflight_accepts_three_final_consecutive_ready_snapshots(tmp_path):
 def test_builder_restores_valid_progress_and_rejects_malformed_progress(tmp_path):
     from wendao_bot.storage import RuntimeStore
 
+    config = tmp_path / "config.yaml"
+    config.write_text("window:\n  owner: wendao.exe\n", encoding="utf-8")
     RuntimeStore(tmp_path).save_state({
         "progress": {
             "level": 16, "main_blocked_by_level": True,
             "shimen_completed": 4, "completed_dailies": ["除暴"],
         }
     })
-    runner = _build_runner(None, tmp_path, observe_only=True)
+    runner = _build_runner(config, tmp_path, observe_only=True)
     assert runner.progress.level == 16
     assert runner.progress.completed_dailies == {"除暴"}
     RuntimeStore(tmp_path).save_state({"progress": {"level": "admin"}})
-    assert _build_runner(None, tmp_path, observe_only=True).progress.level is None
+    assert _build_runner(config, tmp_path, observe_only=True).progress.level is None
 
 
 def test_drive_polls_paused_runner_until_resume_then_stop():
