@@ -464,6 +464,7 @@ class TkView:
         "choose_config": "选择配置",
         "runtime_folder": "运行目录",
         "notification_preview": "通知预览",
+        "check_update": "检查更新",
     }
     _BUTTON_ACTIONS = {
         "observe": "observe",
@@ -506,6 +507,73 @@ class TkView:
     def install_buttons(self, controller) -> None:
         for key, action in self._BUTTON_ACTIONS.items():
             self.buttons[key].configure(command=getattr(controller, action))
+
+    def run_update_flow(self, shutdown) -> None:
+        import tempfile
+        from tkinter import messagebox
+
+        from . import updater
+
+        try:
+            info = updater.check_update()
+        except updater.UpdateError as error:
+            messagebox.showerror("检查更新", f"检查更新失败：\n{error}", parent=self.root)
+            return
+        if info is None:
+            messagebox.showinfo("检查更新", "当前已是最新版本。", parent=self.root)
+            return
+        wanted = messagebox.askyesno(
+            "发现新版本",
+            f"新版本：{info.version_name}\n\n更新内容：\n{info.changelog or '—'}\n\n"
+            "是否下载并安装？下载完成后程序会自动重启。",
+            parent=self.root,
+        )
+        if not wanted:
+            return
+        try:
+            install_dir = updater.install_directory()
+        except updater.UpdateError as error:
+            messagebox.showerror("检查更新", str(error), parent=self.root)
+            return
+
+        import tkinter as tk
+
+        progress = tk.Toplevel(self.root)
+        progress.title("正在下载更新")
+        progress.transient(self.root)
+        label = tk.Label(progress, text="正在下载…", width=40, anchor="w")
+        label.pack(padx=12, pady=12)
+
+        def report(received: int, total: int) -> None:
+            if total:
+                label.configure(
+                    text=f"正在下载… {received // 1048576}MB / {total // 1048576}MB"
+                )
+            else:
+                label.configure(text=f"正在下载… {received // 1048576}MB")
+            progress.update_idletasks()
+            self.root.update()
+
+        try:
+            archive = updater.download_and_verify(
+                info,
+                Path(tempfile.gettempdir()) / "wendao-updates",
+                reporthook=report,
+            )
+            updater.stage_windows_update(
+                archive, install_dir, Path(sys.executable).name
+            )
+        except updater.UpdateError as error:
+            progress.destroy()
+            messagebox.showerror("检查更新", f"更新失败：\n{error}", parent=self.root)
+            return
+        progress.destroy()
+        messagebox.showinfo(
+            "检查更新",
+            "下载完成并已校验。程序即将退出，更新会自动完成并重新启动。",
+            parent=self.root,
+        )
+        shutdown()
 
     def render(self, state: AppViewState) -> None:
         model = display_model(state)
@@ -646,6 +714,10 @@ def _build_tk_app(service: AppService):
     def on_close() -> None:
         if controller.begin_termination():
             view.finish_termination()
+
+    view.buttons["check_update"].configure(
+        command=lambda: view.run_update_flow(on_close)
+    )
 
     view.root.protocol("WM_DELETE_WINDOW", on_close)
     view.root.after(200, poll)

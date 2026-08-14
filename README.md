@@ -113,6 +113,24 @@ python scripts/capture_template.py --config C:\absolute\path\config.yaml --state
 
 采集工具使用配置中的标题和宽高,并按配置尺寸等比扩大隐私禁区;OCR 检出邮箱、电话等私密文本或裁剪区与禁区重叠时拒绝保存。日常目标用 `--target daily` 加 `--daily-name` 指定白名单中的名称。坐标必须从当前固定尺寸画面重新测量,不要跨尺寸复用模板。
 
+## 软件内更新(OTA)
+
+图形界面的"检查更新"按钮从 `https://ota.alucard.top/wendao/version.json` 读取更新清单(与 GoFilm Android 版同一套 versionCode 模式,外加必填的 `sha256`)。更新永不静默:用户确认后才下载,压缩包哈希与清单不符立即拒绝,替换在程序退出后由升级脚本完成并自动重启。开发运行(非打包)时不提供自更新。
+
+发布一个新版本的步骤:
+
+1. 提升版本号:`src/wendao_bot/updater.py` 的 `VERSION_CODE` 加 1,`src/wendao_bot/__init__.py` 与 `pyproject.toml` 的版本同步;
+2. 推送后从 CI 下载新的 `问道前台助手-win.zip`(或本地 `build_app.ps1` 打包);
+3. 生成清单:
+
+   ```bash
+   python scripts/make_update_manifest.py --zip dist/问道前台助手-win.zip --version-name 0.3.0 --version-code 3 --url "https://ota.alucard.top/wendao/wendao-0.3.0.zip" --changelog "更新说明" --output dist/version.json
+   ```
+
+4. 把 zip 上传到 `--url` 指定的确切位置,`version.json` 上传到 `https://ota.alucard.top/wendao/version.json`。zip 每次重新打包都必须重新生成清单(sha256 会变)。
+
+清单地址可用环境变量 `WENDAO_UPDATE_URL` 覆盖,便于测试。
+
 ## 日志和运行数据
 
 默认运行目录:
