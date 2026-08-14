@@ -257,3 +257,23 @@ def test_near_equal_spatial_target_matches_fail_closed(tmp_path: Path) -> None:
     snapshot = ScreenRecognizer(ocr=lambda _: "当前地图", template_dir=tmp_path).classify(screen_path)
     assert snapshot.state is ScreenState.UNKNOWN
     assert snapshot.targets == {}
+
+
+def test_call_with_timeout_raises_fail_closed_on_hang():
+    import time
+
+    from wendao_bot.recognizer import _call_with_timeout
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        _call_with_timeout(lambda: time.sleep(5), 0.1, "Windows OCR")
+
+
+def test_call_with_timeout_returns_value_and_propagates_errors():
+    from wendao_bot.recognizer import _call_with_timeout
+
+    assert _call_with_timeout(lambda: "文本", 1.0, "Windows OCR") == "文本"
+
+    with pytest.raises(ValueError, match="inner"):
+        _call_with_timeout(
+            lambda: (_ for _ in ()).throw(ValueError("inner")), 1.0, "Windows OCR"
+        )

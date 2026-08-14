@@ -90,12 +90,44 @@ def vision_ocr(image_path: Path) -> str:
     return "\n".join(lines)
 
 
+OCR_TIMEOUT_SECONDS = 20.0
+
+
+def _call_with_timeout(function, seconds: float, description: str):
+    import threading
+
+    outcome: list = []
+
+    def work() -> None:
+        try:
+            outcome.append(("ok", function()))
+        except BaseException as error:
+            outcome.append(("error", error))
+
+    worker = threading.Thread(target=work, name="wendao-ocr", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if not outcome:
+        raise RuntimeError(f"{description} timed out after {seconds:.0f}s")
+    kind, value = outcome[0]
+    if kind == "error":
+        raise value
+    return value
+
+
 def windows_ocr(image_path: Path) -> str:
     if sys.platform != "win32":
         raise RuntimeError(
             "Windows OCR failed: Windows.Media.Ocr is unavailable on this platform"
         )
+    return _call_with_timeout(
+        lambda: _windows_ocr_impl(image_path),
+        OCR_TIMEOUT_SECONDS,
+        "Windows OCR",
+    )
 
+
+def _windows_ocr_impl(image_path: Path) -> str:
     import asyncio
 
     try:

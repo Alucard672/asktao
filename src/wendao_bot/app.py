@@ -510,18 +510,52 @@ class TkView:
             self.buttons[key].configure(command=getattr(controller, action))
 
     def run_diagnostics_flow(self, service) -> None:
+        import queue
+        import threading
         import tkinter as tk
         from tkinter import messagebox
 
         from .diagnostics import run_diagnostics
 
-        try:
-            report, lines = run_diagnostics(
-                service.config_path, service.ensure_runtime_directory()
-            )
-        except Exception as error:
-            messagebox.showerror("诊断", f"诊断执行失败：{error}", parent=self.root)
+        if getattr(self, "_diagnosing", False):
             return
+        self._diagnosing = True
+        self.buttons["diagnose"].configure(state="disabled", text="诊断中…")
+        results: queue.Queue = queue.Queue(maxsize=1)
+        config_path = service.config_path
+        runtime = service.ensure_runtime_directory()
+
+        def work() -> None:
+            try:
+                results.put(("ok", run_diagnostics(config_path, runtime)))
+            except Exception as error:
+                results.put(("error", error))
+
+        threading.Thread(target=work, name="wendao-diagnostics", daemon=True).start()
+
+        def finish() -> None:
+            if self._destroyed:
+                return
+            try:
+                kind, payload = results.get_nowait()
+            except queue.Empty:
+                self.root.after(200, finish)
+                return
+            self._diagnosing = False
+            self.buttons["diagnose"].configure(state="normal", text="诊断")
+            if kind == "error":
+                messagebox.showerror(
+                    "诊断", f"诊断执行失败：{payload}", parent=self.root
+                )
+                return
+            report, lines = payload
+            self._show_diagnostics_result(report, lines)
+
+        self.root.after(200, finish)
+
+    def _show_diagnostics_result(self, report, lines) -> None:
+        import tkinter as tk
+
         window = tk.Toplevel(self.root)
         window.title("诊断结果")
         window.transient(self.root)
@@ -753,13 +787,20 @@ def _build_tk_app(service: AppService):
     return view.root, retained
 
 
+def _startup_config_path() -> Path | None:
+    from .app_service import default_runtime_path
+
+    detected = default_runtime_path() / "detected-config.yaml"
+    return detected if detected.is_file() else None
+
+
 def main() -> None:
     if sys.platform == "win32":
         from .session_windows import _ensure_dpi_awareness
 
         _ensure_dpi_awareness()
-    service = AppService()
     if sys.platform == "darwin":
+        service = AppService()
         app, retained = _build_native_app(service)
         view, controller = retained[0], retained[1]
         controller.launch()
@@ -767,6 +808,7 @@ def main() -> None:
         app.activateIgnoringOtherApps_(True)
         app.run()
         return
+    service = AppService(config_path=_startup_config_path())
     root, retained = _build_tk_app(service)
     view, controller = retained[0], retained[1]
     controller.launch()
