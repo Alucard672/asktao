@@ -59,6 +59,58 @@ def display_model(state: AppViewState) -> DisplayModel:
     )
 
 
+KNOWN_EMULATOR_EXECUTABLES = frozenset(
+    {
+        "mumuplayer.exe",
+        "mumunxdevice.exe",
+        "nemuplayer.exe",
+        "dnplayer.exe",
+        "nox.exe",
+        "hd-player.exe",
+        "ldplayer.exe",
+        "memu.exe",
+    }
+)
+
+_EMULATOR_TITLE_HINTS = ("mumu", "模拟器", "雷电", "夜神", "bluestacks", "安卓")
+
+_MIN_EMULATOR_CLIENT_SIZE = 200
+
+
+def emulator_candidates(windows) -> list:
+    ranked = []
+    for window in windows:
+        if not window.title:
+            continue
+        if window.width < _MIN_EMULATOR_CLIENT_SIZE:
+            continue
+        if window.height < _MIN_EMULATOR_CLIENT_SIZE:
+            continue
+        known_owner = window.owner_name.casefold() in KNOWN_EMULATOR_EXECUTABLES
+        title = window.title.casefold()
+        hinted = any(hint in title for hint in _EMULATOR_TITLE_HINTS)
+        if known_owner or hinted:
+            ranked.append((0 if known_owner else 1, window))
+    ranked.sort(key=lambda item: (item[0], item[1].title))
+    return [window for _, window in ranked]
+
+
+def write_detected_config(window, destination: Path) -> Path:
+    import json
+
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    payload = (
+        f"window:\n"
+        f"  title: {json.dumps(window.title, ensure_ascii=False)}\n"
+        f"  owner: {json.dumps(window.owner_name, ensure_ascii=False)}\n"
+        f"  width: {int(window.width)}\n"
+        f"  height: {int(window.height)}\n"
+    )
+    destination.write_text(payload, encoding="utf-8")
+    return destination
+
+
 class AppController:
     """Coordinate GUI actions without importing or touching AppKit."""
 
@@ -119,6 +171,11 @@ class AppController:
 
     def choose_config(self) -> None:
         path = self.view.choose_config()
+        if path is not None:
+            self._call(lambda: self.service.set_config(path))
+
+    def detect_emulator(self) -> None:
+        path = self.view.detect_emulator()
         if path is not None:
             self._call(lambda: self.service.set_config(path))
 
@@ -403,6 +460,7 @@ class TkView:
         "pause": "暂停",
         "resume": "恢复",
         "stop": "停止",
+        "detect_emulator": "检测模拟器",
         "choose_config": "选择配置",
         "runtime_folder": "运行目录",
         "notification_preview": "通知预览",
@@ -414,6 +472,7 @@ class TkView:
         "pause": "pause",
         "resume": "resume",
         "stop": "stop",
+        "detect_emulator": "detect_emulator",
         "choose_config": "choose_config",
         "runtime_folder": "open_runtime_folder",
         "notification_preview": "preview_notification",
@@ -467,6 +526,84 @@ class TkView:
 
         selected = filedialog.askopenfilename(parent=self.root)
         return Path(selected) if selected else None
+
+    def _list_windows(self) -> list:
+        if sys.platform == "win32":
+            from .session_windows import Win32Backend
+
+            return Win32Backend().list_windows()
+        from .session import QuartzBackend
+
+        return QuartzBackend().list_windows()
+
+    def detect_emulator(self) -> Path | None:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        from .app_service import default_runtime_path
+
+        try:
+            candidates = emulator_candidates(self._list_windows())
+        except Exception:
+            messagebox.showerror(
+                "问道前台助手", "无法枚举窗口，请确认系统权限", parent=self.root
+            )
+            return None
+        if not candidates:
+            messagebox.showinfo(
+                "问道前台助手",
+                "未找到模拟器窗口。\n请确认模拟器已启动且未最小化，然后重试。",
+                parent=self.root,
+            )
+            return None
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("选择模拟器窗口")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        tk.Label(
+            dialog,
+            text="找到以下候选窗口，请选择要连接的模拟器实例：",
+            anchor="w",
+        ).pack(fill="x", padx=8, pady=(8, 4))
+        listbox = tk.Listbox(dialog, width=64, height=min(10, len(candidates)))
+        for window in candidates:
+            listbox.insert(
+                "end",
+                f"{window.title}  —  {window.owner_name}"
+                f"  ({window.width}x{window.height})",
+            )
+        listbox.selection_set(0)
+        listbox.pack(fill="both", expand=True, padx=8, pady=4)
+        chosen: list = []
+
+        def confirm() -> None:
+            selection = listbox.curselection()
+            if selection:
+                chosen.append(candidates[selection[0]])
+            dialog.destroy()
+
+        buttons = tk.Frame(dialog)
+        buttons.pack(pady=(4, 8))
+        tk.Button(buttons, text="确定", width=10, command=confirm).grid(
+            row=0, column=0, padx=4
+        )
+        tk.Button(buttons, text="取消", width=10, command=dialog.destroy).grid(
+            row=0, column=1, padx=4
+        )
+        dialog.wait_window()
+        if not chosen:
+            return None
+        destination = default_runtime_path() / "detected-config.yaml"
+        path = write_detected_config(chosen[0], destination)
+        messagebox.showinfo(
+            "问道前台助手",
+            f"已生成并载入配置：\n{path}\n\n"
+            f"窗口：{chosen[0].title}（{chosen[0].width}x{chosen[0].height}）\n"
+            "请保持该窗口完整可见。",
+            parent=self.root,
+        )
+        return path
 
     def open_runtime_folder(self, runtime: Path) -> None:
         import os

@@ -409,3 +409,56 @@ def test_config_panel_avoids_deprecated_file_type_filter_that_disables_yaml():
     assert panel.directories is False
     assert panel.other_file_types is True
     assert panel.allowed_types_calls == []
+
+
+def test_emulator_candidates_filters_and_ranks_known_executables():
+    from wendao_bot.app import emulator_candidates
+    from wendao_bot.session import WindowInfo
+
+    windows = [
+        WindowInfo(3, "某某模拟器", 0, 0, 1280, 720, 12, "unknown.exe"),
+        WindowInfo(1, "MuMu安卓设备 -1", 0, 0, 1600, 900, 10, "MuMuPlayer.exe"),
+        WindowInfo(2, "记事本", 0, 0, 800, 600, 11, "notepad.exe"),
+        WindowInfo(4, "MuMu悬浮球", 0, 0, 48, 48, 10, "MuMuPlayer.exe"),
+        WindowInfo(5, "", 0, 0, 1280, 720, 13, "dnplayer.exe"),
+    ]
+
+    result = emulator_candidates(windows)
+
+    assert [window.window_id for window in result] == [1, 3]
+
+
+def test_detected_config_is_valid_and_loadable(tmp_path):
+    from wendao_bot.app import write_detected_config
+    from wendao_bot.config import load_config
+    from wendao_bot.session import WindowInfo
+
+    window = WindowInfo(1, "MuMu安卓设备 -1", 0, 0, 1600, 900, 10, "MuMuPlayer.exe")
+
+    path = write_detected_config(window, tmp_path / "detected.yaml")
+
+    config = load_config(path)
+    assert config.window_title == "MuMu安卓设备 -1"
+    assert config.window_owner == "MuMuPlayer.exe"
+    assert (config.width, config.height) == (1600, 900)
+
+
+def test_detect_emulator_applies_generated_config_via_service():
+    from wendao_bot.app import AppController
+
+    service, view = FakeService(), FakeView()
+    detected = Path(TMP + "/detected.yaml")
+    view.detect_emulator = lambda: detected
+    AppController(service, view).detect_emulator()
+
+    assert ("set_config", detected) in service.calls
+
+
+def test_detect_emulator_cancel_calls_no_service_api():
+    from wendao_bot.app import AppController
+
+    service, view = FakeService(), FakeView()
+    view.detect_emulator = lambda: None
+    AppController(service, view).detect_emulator()
+
+    assert service.calls == []
