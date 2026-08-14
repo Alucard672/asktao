@@ -598,9 +598,10 @@ class TkView:
         path = write_detected_config(chosen[0], destination)
         messagebox.showinfo(
             "问道前台助手",
-            f"已生成并载入配置：\n{path}\n\n"
+            f"已生成配置：\n{path}\n\n"
             f"窗口：{chosen[0].title}（{chosen[0].width}x{chosen[0].height}）\n"
-            "请保持该窗口完整可见。",
+            "点击确定后自动载入并开始只读观察。\n"
+            "请保持模拟器窗口完整可见、不被其他窗口遮挡。",
             parent=self.root,
         )
         return path

@@ -282,7 +282,7 @@ class Win32Backend:
 
     def capture(self, target: WindowInfo) -> bytes:
         api = self._win32()
-        self._assert_target_visible(api, target)
+        self._assert_target_visible(api, target, require_foreground=False)
         dimensions, data = api.grab_png(
             target.x, target.y, target.width, target.height
         )
@@ -312,11 +312,13 @@ class Win32Backend:
         api.move_cursor(*point)
         api.send_click(*point)
 
-    def _assert_target_visible(self, api, target: WindowInfo) -> None:
+    def _assert_target_visible(
+        self, api, target: WindowInfo, *, require_foreground: bool = True
+    ) -> None:
         handle = target.window_id
         if api.is_iconic(handle):
             raise RuntimeError("target window is minimized")
-        if int(api.foreground_window() or 0) != handle:
+        if require_foreground and int(api.foreground_window() or 0) != handle:
             raise RuntimeError("window owner is not the foreground application")
         for point in self._sample_points(target):
             if int(api.root_window_at(*point) or 0) != handle:

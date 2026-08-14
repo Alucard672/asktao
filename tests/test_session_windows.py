@@ -111,11 +111,21 @@ def test_capture_rejects_wrong_executable_name() -> None:
     assert api.grabs == []
 
 
-def test_capture_rejects_background_window() -> None:
+def test_capture_allows_unoccluded_background_window() -> None:
     api = FakeWin32Api()
     api.foreground = 999
 
-    with pytest.raises(RuntimeError, match="foreground"):
+    session_for(api).capture()
+
+    assert len(api.grabs) == 1
+
+
+def test_capture_still_rejects_covered_background_window() -> None:
+    api = FakeWin32Api()
+    api.foreground = 999
+    api.covered[(100, 200)] = 999
+
+    with pytest.raises(RuntimeError, match="covered at sample point"):
         session_for(api).capture()
 
     assert api.grabs == []
