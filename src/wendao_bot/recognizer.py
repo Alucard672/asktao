@@ -163,6 +163,129 @@ def _windows_ocr_impl(image_path: Path) -> str:
     return asyncio.run(recognize())
 
 
+def windows_ocr_words(image_path: Path) -> list[tuple[str, int, int, int, int]]:
+    """Return OCR words as (text, left, top, width, height) tuples.
+
+    Coordinates are screenshot pixels, which equal window client-area
+    coordinates for captures taken through GameSession.
+    """
+    if sys.platform != "win32":
+        raise RuntimeError(
+            "Windows OCR failed: Windows.Media.Ocr is unavailable on this platform"
+        )
+    return _call_with_timeout(
+        lambda: _windows_ocr_words_impl(image_path),
+        OCR_TIMEOUT_SECONDS,
+        "Windows OCR",
+    )
+
+
+def _windows_ocr_words_impl(image_path: Path) -> list[tuple[str, int, int, int, int]]:
+    import asyncio
+
+    try:
+        from winsdk.windows.globalization import Language
+        from winsdk.windows.graphics.imaging import BitmapDecoder
+        from winsdk.windows.media.ocr import OcrEngine
+        from winsdk.windows.storage import StorageFile
+    except ImportError as error:
+        raise RuntimeError(
+            f"Windows OCR failed: winsdk is not installed ({error})"
+        ) from error
+
+    async def recognize() -> list[tuple[str, int, int, int, int]]:
+        engine = OcrEngine.try_create_from_language(Language("zh-Hans"))
+        if engine is None:
+            engine = OcrEngine.try_create_from_user_profile_languages()
+        if engine is None:
+            raise RuntimeError(
+                "Windows OCR failed: no OCR engine for zh-Hans or the user profile languages"
+            )
+        file = await StorageFile.get_file_from_path_async(
+            str(Path(image_path).resolve())
+        )
+        stream = await file.open_read_async()
+        decoder = await BitmapDecoder.create_async(stream)
+        bitmap = await decoder.get_software_bitmap_async()
+        result = await engine.recognize_async(bitmap)
+        words = []
+        for line in result.lines:
+            for word in line.words:
+                rect = word.bounding_rect
+                words.append(
+                    (
+                        str(word.text),
+                        int(rect.x),
+                        int(rect.y),
+                        int(rect.width),
+                        int(rect.height),
+                    )
+                )
+        return words
+
+    return asyncio.run(recognize())
+
+
+def default_ocr_words(image_path: Path) -> list[tuple[str, int, int, int, int]]:
+    if sys.platform == "win32":
+        return windows_ocr_words(image_path)
+    raise RuntimeError(
+        f"OCR word extraction failed: no backend for platform {sys.platform!r}"
+    )
+
+
+WORD_MERGE_ROW_TOLERANCE = 10
+
+
+def merge_adjacent_words(
+    words: list[tuple[str, int, int, int, int]], max_gap: int = 8
+) -> list[tuple[str, int, int]]:
+    """Merge horizontally adjacent OCR words into phrases.
+
+    Input items are (text, left, top, width, height) boxes in screenshot
+    pixels, as returned by windows_ocr_words. Output items are
+    (phrase, center_x, center_y) where the center is that of the merged
+    phrase bounding box.
+    """
+    rows: list[list[tuple[str, int, int, int, int]]] = []
+    anchors: list[int] = []
+    for word in sorted(words, key=lambda item: (item[2] + item[4] // 2, item[1])):
+        center_y = word[2] + word[4] // 2
+        placed = False
+        for index, anchor in enumerate(anchors):
+            if abs(center_y - anchor) <= WORD_MERGE_ROW_TOLERANCE:
+                rows[index].append(word)
+                placed = True
+                break
+        if not placed:
+            rows.append([word])
+            anchors.append(center_y)
+
+    phrases: list[tuple[str, int, int]] = []
+    for row in rows:
+        ordered = sorted(row, key=lambda item: item[1])
+        current: list[tuple[str, int, int, int, int]] = []
+        for word in ordered:
+            if current and word[1] - max(item[1] + item[3] for item in current) > max_gap:
+                phrases.append(_phrase_from_words(current))
+                current = []
+            current.append(word)
+        if current:
+            phrases.append(_phrase_from_words(current))
+    return phrases
+
+
+def _phrase_from_words(
+    words: list[tuple[str, int, int, int, int]]
+) -> tuple[str, int, int]:
+    text = "".join(item[0] for item in words)
+    left = min(item[1] for item in words)
+    right = max(item[1] + item[3] for item in words)
+    top = min(item[2] for item in words)
+    bottom = max(item[2] + item[4] for item in words)
+    return (text, (left + right) // 2, (top + bottom) // 2)
+
+
 def default_ocr(image_path: Path) -> str:
     if sys.platform == "darwin":
         return vision_ocr(image_path)

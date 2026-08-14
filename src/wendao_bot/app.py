@@ -482,14 +482,48 @@ class TkView:
     }
     _GATED_BUTTONS = ("single_step", "continuous")
 
+    _SUMMARY_TITLES = {
+        "connection": "连接",
+        "screen": "画面",
+        "afk": "挂机",
+    }
+
     def __init__(self) -> None:
         import tkinter as tk
 
         self._destroyed = False
         self.root = tk.Tk()
         self.root.title("问道前台助手")
+
+        self.summary_labels = {}
+        summary = tk.Frame(self.root, padx=24, pady=16)
+        summary.pack(fill="x")
+        for row, (key, title) in enumerate(self._SUMMARY_TITLES.items()):
+            caption = tk.Label(summary, text=f"{title}：", width=6, anchor="w")
+            caption.grid(row=row, column=0, sticky="w")
+            value = tk.Label(summary, text="—", anchor="w")
+            value.grid(row=row, column=1, sticky="w")
+            self.summary_labels[key] = value
+
+        self.buttons = {}
+        primary = tk.Frame(self.root, padx=24, pady=8)
+        primary.pack(fill="x")
+        for column, (key, title) in enumerate(
+            [
+                ("afk_start", "开始挂机"),
+                ("afk_stop", "停止挂机"),
+                ("detect_emulator", "检测模拟器"),
+                ("toggle_advanced", "高级 ▾"),
+            ]
+        ):
+            button = tk.Button(primary, text=title, width=10)
+            button.grid(row=0, column=column, padx=4, pady=4)
+            self.buttons[key] = button
+        self.buttons["afk_stop"].configure(state="disabled")
+
+        self._advanced = tk.Frame(self.root)
         self.labels = {}
-        fields = tk.Frame(self.root, padx=24, pady=16)
+        fields = tk.Frame(self._advanced, padx=24, pady=8)
         fields.pack(fill="x")
         for row, (key, title) in enumerate(self._FIELD_TITLES.items()):
             caption = tk.Label(fields, text=f"{title}：", width=12, anchor="w")
@@ -497,14 +531,26 @@ class TkView:
             value = tk.Label(fields, text="—", anchor="w")
             value.grid(row=row, column=1, sticky="w")
             self.labels[key] = value
-        self.buttons = {}
-        actions = tk.Frame(self.root, padx=24, pady=16)
+        actions = tk.Frame(self._advanced, padx=24, pady=8)
         actions.pack(fill="x")
         for index, (key, title) in enumerate(self._BUTTON_TITLES.items()):
+            if key == "detect_emulator":
+                continue
             row, column = divmod(index, 3)
             button = tk.Button(actions, text=title, width=12)
             button.grid(row=row, column=column, padx=4, pady=4)
             self.buttons[key] = button
+        self._advanced_visible = False
+        self.buttons["toggle_advanced"].configure(command=self._toggle_advanced)
+
+    def _toggle_advanced(self) -> None:
+        self._advanced_visible = not self._advanced_visible
+        if self._advanced_visible:
+            self._advanced.pack(fill="x")
+            self.buttons["toggle_advanced"].configure(text="高级 ▴")
+        else:
+            self._advanced.pack_forget()
+            self.buttons["toggle_advanced"].configure(text="高级 ▾")
 
     def install_buttons(self, controller) -> None:
         for key, action in self._BUTTON_ACTIONS.items():
@@ -921,6 +967,19 @@ class TkView:
             self.buttons[key].configure(
                 state="normal" if model.buttons[key] else "disabled"
             )
+        fields = model.fields
+        connection = fields.get("window_connection", "—")
+        geometry = fields.get("window_geometry", "—")
+        if geometry not in ("", "—"):
+            connection = f"{connection}（{geometry}）"
+        self.summary_labels["connection"].configure(text=connection)
+        self.summary_labels["screen"].configure(
+            text=f"{fields.get('state', '—')}（置信度 {fields.get('confidence', '—')}）"
+        )
+
+    def set_afk_summary(self, text: str) -> None:
+        if not self._destroyed:
+            self.summary_labels["afk"].configure(text=text)
 
     def show_error(self, message: str) -> None:
         from tkinter import messagebox
@@ -1050,6 +1109,8 @@ def _build_tk_app(service: AppService):
             view.root.after(200, poll)
 
     def on_close() -> None:
+        if afk_state["stop"] is not None:
+            afk_state["stop"].set()
         if controller.begin_termination():
             view.finish_termination()
 
@@ -1059,6 +1120,83 @@ def _build_tk_app(service: AppService):
     view.buttons["diagnose"].configure(
         command=lambda: view.run_diagnostics_flow(service)
     )
+
+    import threading
+
+    afk_state: dict = {"stop": None, "thread": None}
+
+    def start_afk() -> None:
+        if afk_state["thread"] is not None and afk_state["thread"].is_alive():
+            return
+        from .afk import AfkLoop
+        from .app_service import _platform_session
+        from .config import load_config
+        from .recognizer import default_ocr_words
+
+        try:
+            config = load_config(service.config_path)
+            session = _platform_session(config)
+        except Exception as error:
+            view.show_error(f"无法开始挂机：{error}")
+            return
+        try:
+            service.request_stop()
+        except Exception:
+            pass
+        stop = threading.Event()
+
+        def on_status(status) -> None:
+            names = {"running": "运行中", "paused": "已暂停", "stopped": "已停止"}
+            text = names.get(status.state, status.state)
+            if status.reason:
+                text += f"（{status.reason}）"
+            if status.last_action:
+                text += f"｜{status.last_action}"
+            if not view._destroyed:
+                view.root.after(0, lambda value=text: view.set_afk_summary(value))
+
+        loop = AfkLoop(
+            session=session,
+            ocr_words=default_ocr_words,
+            keymap=dict(config.keymap),
+            stop_event=stop,
+            on_status=on_status,
+            runtime_dir=service.ensure_runtime_directory(),
+        )
+
+        def work() -> None:
+            try:
+                loop.run()
+            except Exception as error:
+                if not view._destroyed:
+                    view.root.after(
+                        0,
+                        lambda value=f"已停止（{error}）": view.set_afk_summary(value),
+                    )
+            finally:
+                if not view._destroyed:
+                    view.root.after(0, reset_afk_buttons)
+
+        afk_state["stop"] = stop
+        afk_state["thread"] = threading.Thread(
+            target=work, name="wendao-afk", daemon=True
+        )
+        view.buttons["afk_start"].configure(state="disabled")
+        view.buttons["afk_stop"].configure(state="normal")
+        view.set_afk_summary("启动中…")
+        afk_state["thread"].start()
+
+    def reset_afk_buttons() -> None:
+        view.buttons["afk_start"].configure(state="normal")
+        view.buttons["afk_stop"].configure(state="disabled")
+
+    def stop_afk() -> None:
+        if afk_state["stop"] is not None:
+            afk_state["stop"].set()
+        view.set_afk_summary("停止中…")
+
+    view.buttons["afk_start"].configure(command=start_afk)
+    view.buttons["afk_stop"].configure(command=stop_afk)
     view.buttons["capture_template"].configure(
         command=lambda: view.run_capture_flow(service)
     )
