@@ -54,6 +54,7 @@ def test_spec_collects_packaged_configuration_and_templates() -> None:
         assert f'"{dependency}"' in contents
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX build script contract")
 def test_build_script_uses_pinned_project_venv_and_archives_app() -> None:
     contents = BUILD_SCRIPT.read_text(encoding="utf-8")
     mode = BUILD_SCRIPT.stat().st_mode

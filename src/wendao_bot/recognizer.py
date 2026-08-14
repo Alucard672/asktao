@@ -13,6 +13,16 @@ import numpy as np
 from .models import ScreenSnapshot, ScreenState
 from .target_schema import is_safe_daily_name
 
+
+def _read_image(path: Path) -> "np.ndarray | None":
+    try:
+        data = np.fromfile(str(path), dtype=np.uint8)
+    except OSError:
+        return None
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
+
 OCR = Callable[[Path], str]
 
 BLOCKED_KEYWORDS: Mapping[ScreenState, tuple[str, ...]] = {
@@ -232,7 +242,7 @@ class ScreenRecognizer:
 
     @staticmethod
     def _valid_template(path: Path) -> bool:
-        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        image = _read_image(path)
         if image is None or image.ndim != 3 or image.shape[2] != 3:
             return False
         grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -278,13 +288,13 @@ class ScreenRecognizer:
     def _template_matches(
         self, path: Path
     ) -> list[tuple[ScreenState, str, tuple[int, int], float, str]]:
-        screen = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        screen = _read_image(path)
         if screen is None or screen.ndim != 3 or screen.shape[2] != 3:
             return []
         matches = []
         screen_height, screen_width = screen.shape[:2]
         for state, target, template_path in self._templates():
-            template = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
+            template = _read_image(template_path)
             if template is None or template.ndim != 3 or template.shape[2] != 3:
                 continue
             height, width = template.shape[:2]

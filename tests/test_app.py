@@ -9,6 +9,10 @@ import pytest
 from wendao_bot.app_model import AppViewState
 from wendao_bot.app_service import InvalidModeTransition
 
+import os as _os
+
+TMP = "C:/tmp" if _os.name == "nt" else "/tmp"
+
 
 class FakeView:
     def __init__(self):
@@ -83,7 +87,7 @@ class FakeService:
 
     def ensure_runtime_directory(self):
         self.calls.append("ensure_runtime_directory")
-        return Path("/tmp/runtime")
+        return Path(TMP + "/tmp/runtime")
 
     def preview_notification(self):
         self.calls.append("preview_notification")
@@ -99,7 +103,7 @@ def ready_state(*, verified=False):
         screen_state="map",
         confidence=0.97,
         target_names=("claim", "main_quest"),
-        screenshot_path="/tmp/screens/capture-000001.png",
+        screenshot_path=TMP + "/tmp/screens/capture-000001.png",
         pause_reason=None,
         recognition_ready=True,
         single_step_verified=verified,
@@ -110,7 +114,7 @@ def ready_state(*, verified=False):
         template_available=True,
         observe_ready=True,
         accessibility_trusted=True,
-        trusted_screenshot_root=Path("/tmp/screens"),
+        trusted_screenshot_root=Path(TMP + "/tmp/screens"),
     )
 
 
@@ -209,7 +213,7 @@ def test_controller_applies_selected_config_and_shows_exact_preview():
     from wendao_bot.app import AppController
 
     service, view = FakeService(), FakeView()
-    view.choose_config = lambda: Path("/tmp/new.yaml")
+    view.choose_config = lambda: Path(TMP + "/tmp/new.yaml")
     view.open_runtime_folder = lambda path=None: view.hooks.append(("runtime", path))
     view.preview_notification = lambda preview=None: view.hooks.append(
         ("preview", preview.recipient, preview.body)
@@ -220,8 +224,8 @@ def test_controller_applies_selected_config_and_shows_exact_preview():
     controller.open_runtime_folder()
     controller.preview_notification()
 
-    assert ("set_config", Path("/tmp/new.yaml")) in service.calls
-    assert ("runtime", Path("/tmp/runtime")) in view.hooks
+    assert ("set_config", Path(TMP + "/tmp/new.yaml")) in service.calls
+    assert ("runtime", Path(TMP + "/tmp/runtime")) in view.hooks
     assert ("preview", "to@example.com", "exact body") in view.hooks
 
 
@@ -343,7 +347,7 @@ def test_native_adapter_constructs_with_valid_one_argument_selectors():
     from wendao_bot.app import _build_native_app
 
     service = FakeService()
-    service.runtime = Path("/tmp")
+    service.runtime = Path(TMP + "/tmp")
     app, retained = _build_native_app(service)
     view, _controller, target, _delegate, timer = retained
     try:

@@ -38,6 +38,8 @@ class RuntimeStore:
         path = self.root / "events.jsonl"
         flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY
         flags |= getattr(os, "O_NOFOLLOW", 0)
+        if path.is_symlink():
+            raise ValueError("event log must be a regular non-symlink file")
         try:
             descriptor = os.open(path, flags, 0o600)
         except OSError as exc:
@@ -132,6 +134,8 @@ class RuntimeStore:
 
     @staticmethod
     def _fsync_directory(directory: Path) -> None:
+        if os.name == "nt":
+            return
         descriptor = os.open(directory, os.O_RDONLY)
         try:
             os.fsync(descriptor)

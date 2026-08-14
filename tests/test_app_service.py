@@ -26,6 +26,7 @@ def test_build_runner_creates_observer_with_exact_shared_stop_event(monkeypatch,
     captured = {}
     config = SimpleNamespace(
         window_title="Wendao",
+        window_owner="wendao.exe",
         width=800,
         height=600,
         min_confidence=0.9,
@@ -85,6 +86,7 @@ def test_app_runner_pause_notification_never_invokes_osascript(monkeypatch, tmp_
     captured = {}
     config = SimpleNamespace(
         window_title="Wendao",
+        window_owner="wendao.exe",
         width=800,
         height=600,
         min_confidence=0.9,
@@ -640,7 +642,7 @@ def test_detected_geometry_can_be_exported_as_minimal_atomic_config(tmp_path):
     destination = tmp_path / "detected.yaml"
 
     assert service.write_geometry_config(destination) == destination
-    assert destination.read_text() == (
+    assert destination.read_text(encoding="utf-8") == (
         "window:\n  title: 问道\n  width: 919\n  height: 674\n"
     )
     loaded = app_service.load_config(destination)

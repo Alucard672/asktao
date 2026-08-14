@@ -123,14 +123,15 @@ class GameSession:
                 os.fsync(output.fileno())
             os.replace(temporary, destination)
             temporary = None
-            directory_fd = os.open(
-                destination.parent,
-                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
-            )
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            if os.name != "nt":
+                directory_fd = os.open(
+                    destination.parent,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+                )
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
         finally:
             if temporary is not None:
                 Path(temporary).unlink(missing_ok=True)

@@ -1,4 +1,4 @@
-# Clean build of the Windows onedir app and distribution archive.
+﻿# Clean build of the Windows onedir app and distribution archive.
 # Run from any directory:  powershell -ExecutionPolicy Bypass -File scripts\build_app.ps1
 $ErrorActionPreference = "Stop"
 

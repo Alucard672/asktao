@@ -105,7 +105,9 @@ def test_single_step_waits_for_full_preflight_before_one_live_step(tmp_path):
 
 def test_packaged_template_path_is_used_by_real_builder(tmp_path):
     assert template_path().is_dir()
-    runner = _build_runner(None, tmp_path, observe_only=True)
+    config = tmp_path / "config.yaml"
+    config.write_text("window:\n  owner: wendao.exe\n", encoding="utf-8")
+    runner = _build_runner(config, tmp_path, observe_only=True)
     assert runner.recognizer._template_dir == template_path()
 
 

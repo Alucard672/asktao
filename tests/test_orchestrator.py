@@ -288,4 +288,5 @@ def test_pause_notice_uses_local_timezone_timestamp(fake_dependencies, monkeypat
     monkeypatch.setattr("wendao_bot.orchestrator.datetime", FixedDateTime)
     fake_dependencies.recognizer.snapshots = [snap(ScreenState.UNKNOWN, confidence=0.1)]
     Orchestrator(**fake_dependencies.as_kwargs()).step()
-    assert fake_dependencies.notifier.messages[0].timestamp == "2026-08-14 20:30:00 +0800"
+    expected = FixedDateTime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
+    assert fake_dependencies.notifier.messages[0].timestamp == expected

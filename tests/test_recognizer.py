@@ -90,8 +90,8 @@ def test_template_match_returns_standard_target_center(tmp_path: Path) -> None:
     screen[40:56, 70:90] = pattern
     screen_path = tmp_path / "screen.png"
     template_path = tmp_path / "map__main_quest__1x.png"
-    cv2.imwrite(str(screen_path), screen)
-    cv2.imwrite(str(template_path), pattern)
+    cv2.imencode(".png", screen)[1].tofile(str(screen_path))
+    cv2.imencode(".png", pattern)[1].tofile(str(template_path))
 
     snapshot = ScreenRecognizer(
         ocr=lambda _: "", template_registry={"main_quest": template_path}
@@ -107,7 +107,7 @@ def test_health_requires_successful_ocr_and_loaded_template(tmp_path: Path) -> N
     template = tmp_path / "map__main_quest__1x.png"
     pattern = np.zeros((12, 12, 3), dtype=np.uint8)
     pattern[2:10, 2:10] = 255
-    cv2.imwrite(str(template), pattern)
+    cv2.imencode(".png", pattern)[1].tofile(str(template))
     recognizer = ScreenRecognizer(ocr=lambda _: "当前地图", template_dir=tmp_path)
     assert recognizer.health() == {"ocr": False, "templates": True}
     recognizer.classify(screen)
@@ -122,8 +122,8 @@ def test_map_ocr_keeps_matching_main_quest_target(tmp_path: Path) -> None:
     screen[40:56, 70:90] = pattern
     screen_path = tmp_path / "screen.png"
     template_path = tmp_path / "map__main_quest__1x.png"
-    cv2.imwrite(str(screen_path), screen)
-    cv2.imwrite(str(template_path), pattern)
+    cv2.imencode(".png", screen)[1].tofile(str(screen_path))
+    cv2.imencode(".png", pattern)[1].tofile(str(template_path))
 
     snapshot = ScreenRecognizer(
         ocr=lambda _: "当前地图", template_registry={"main_quest": template_path}
@@ -140,8 +140,8 @@ def test_conflicting_ocr_and_template_states_return_unknown(tmp_path: Path) -> N
     screen[30:42, 40:54] = pattern
     screen_path = tmp_path / "screen.png"
     template_path = tmp_path / "reward__claim__1x.png"
-    cv2.imwrite(str(screen_path), screen)
-    cv2.imwrite(str(template_path), pattern)
+    cv2.imencode(".png", screen)[1].tofile(str(screen_path))
+    cv2.imencode(".png", pattern)[1].tofile(str(template_path))
 
     snapshot = ScreenRecognizer(
         ocr=lambda _: "当前地图", template_registry={"claim": template_path}
@@ -161,9 +161,9 @@ def test_template_directory_uses_deterministic_best_match(tmp_path: Path) -> Non
     strong[2:10, 2:10] = (255, 255, 255)
     screen[30:42, 50:62] = strong
     screen_path = tmp_path / "screen.png"
-    cv2.imwrite(str(screen_path), screen)
-    cv2.imwrite(str(templates / "map__main_quest__1x.png"), weak)
-    cv2.imwrite(str(templates / "reward__claim__1x.png"), strong)
+    cv2.imencode(".png", screen)[1].tofile(str(screen_path))
+    cv2.imencode(".png", weak)[1].tofile(str(templates / "map__main_quest__1x.png"))
+    cv2.imencode(".png", strong)[1].tofile(str(templates / "reward__claim__1x.png"))
 
     snapshot = ScreenRecognizer(ocr=lambda _: "", template_dir=templates).classify(
         screen_path
@@ -192,8 +192,8 @@ def test_uniform_template_is_rejected(tmp_path: Path) -> None:
     )
     screen_path = tmp_path / "screen.png"
     template_path = tmp_path / "map__main_quest__1x.png"
-    cv2.imwrite(str(screen_path), random)
-    cv2.imwrite(str(template_path), np.zeros((12, 12, 3), dtype=np.uint8))
+    cv2.imencode(".png", random)[1].tofile(str(screen_path))
+    cv2.imencode(".png", np.zeros((12, 12, 3), dtype=np.uint8))[1].tofile(str(template_path))
 
     snapshot = ScreenRecognizer(
         ocr=lambda _: "", template_registry={"main_quest": template_path}
@@ -215,9 +215,9 @@ def test_recognizer_returns_all_whitelisted_planner_targets(tmp_path: Path) -> N
     for target, ((x, y), seed) in specs.items():
         pattern = np.random.default_rng(seed).integers(0, 256, (14, 16, 3), dtype=np.uint8)
         screen[y:y + 14, x:x + 16] = pattern
-        cv2.imwrite(str(templates / f"map__{target}__1x.png"), pattern)
+        cv2.imencode(".png", pattern)[1].tofile(str(templates / f"map__{target}__1x.png"))
     screen_path = tmp_path / "screen.png"
-    cv2.imwrite(str(screen_path), screen)
+    cv2.imencode(".png", screen)[1].tofile(str(screen_path))
 
     snapshot = ScreenRecognizer(
         ocr=lambda _: "当前地图 等级15 主线 20级开启",
@@ -239,8 +239,8 @@ def test_unwhitelisted_daily_template_is_ignored(tmp_path: Path) -> None:
     pattern = screen[10:24, 12:28].copy()
     screen_path = tmp_path / "screen.png"
     template = tmp_path / "map__daily_押镖__1x.png"
-    cv2.imwrite(str(screen_path), screen)
-    cv2.imwrite(str(template), pattern)
+    cv2.imencode(".png", screen)[1].tofile(str(screen_path))
+    cv2.imencode(".png", pattern)[1].tofile(str(template))
     snapshot = ScreenRecognizer(ocr=lambda _: "当前地图", template_dir=tmp_path).classify(screen_path)
     assert snapshot.targets == {}
 
@@ -252,8 +252,8 @@ def test_near_equal_spatial_target_matches_fail_closed(tmp_path: Path) -> None:
     screen[45:59, 95:111] = pattern
     screen_path = tmp_path / "screen.png"
     template = tmp_path / "map__shimen__1x.png"
-    cv2.imwrite(str(screen_path), screen)
-    cv2.imwrite(str(template), pattern)
+    cv2.imencode(".png", screen)[1].tofile(str(screen_path))
+    cv2.imencode(".png", pattern)[1].tofile(str(template))
     snapshot = ScreenRecognizer(ocr=lambda _: "当前地图", template_dir=tmp_path).classify(screen_path)
     assert snapshot.state is ScreenState.UNKNOWN
     assert snapshot.targets == {}

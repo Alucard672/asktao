@@ -7,9 +7,13 @@ from wendao_bot.app_model import AppViewState
 from wendao_bot.models import ScreenSnapshot, ScreenState
 from wendao_bot.orchestrator import StepResult
 
+import os as _os
+
+TMP = "C:/tmp" if _os.name == "nt" else "/tmp"
+
 
 PRIVATE_TEXT = "private OCR alice@example.com recipient@example.com"
-SCREEN_ROOT = Path("/tmp/screens")
+SCREEN_ROOT = Path(TMP + "/tmp/screens")
 
 
 def step_result(
@@ -26,7 +30,7 @@ def step_result(
         state=state,
         confidence=confidence,
         text=PRIVATE_TEXT,
-        image_path="/tmp/screens/capture-000001.png",
+        image_path=TMP + "/tmp/screens/capture-000001.png",
         targets=targets,
         evidence=evidence,
     )
@@ -67,7 +71,7 @@ def test_from_step_retains_only_sanitized_display_data() -> None:
     rendered = f"{state!r} {asdict(state)!r}"
 
     assert state.screen_state == "map"
-    assert state.screenshot_path == "/tmp/screens/capture-000001.png"
+    assert state.screenshot_path == TMP + "/tmp/screens/capture-000001.png"
     assert PRIVATE_TEXT not in rendered
     assert "alice@example.com" not in rendered
     assert "recipient@example.com" not in rendered
@@ -152,7 +156,7 @@ def test_hostile_direct_state_cannot_enable_actions_in_unsafe_status(status) -> 
         screen_state="map",
         confidence=1.0,
         target_names=("main_quest",),
-        screenshot_path="/tmp/screens/capture-000001.png",
+        screenshot_path=TMP + "/tmp/screens/capture-000001.png",
         pause_reason=None,
         recognition_ready=True,
         single_step_verified=True,
@@ -176,7 +180,7 @@ def test_hostile_direct_state_with_failure_reason_cannot_enable_actions() -> Non
         screen_state="map",
         confidence=1.0,
         target_names=("main_quest",),
-        screenshot_path="/tmp/screens/capture-000001.png",
+        screenshot_path=TMP + "/tmp/screens/capture-000001.png",
         pause_reason=None,
         recognition_ready=True,
         single_step_verified=True,
@@ -204,7 +208,7 @@ def test_unrecognized_failure_is_bounded_and_locks_actions(failure) -> None:
         screen_state="map",
         confidence=1.0,
         target_names=("main_quest",),
-        screenshot_path="/tmp/screens/capture-000001.png",
+        screenshot_path=TMP + "/tmp/screens/capture-000001.png",
         pause_reason=None,
         recognition_ready=True,
         single_step_verified=True,
@@ -231,7 +235,7 @@ def test_target_names_are_sorted_and_coordinates_are_discarded() -> None:
 
     assert state.target_names == ("claim", "main_quest")
     assert state.targets == ("claim", "main_quest")
-    assert state.screenshot == "/tmp/screens/capture-000001.png"
+    assert state.screenshot == TMP + "/tmp/screens/capture-000001.png"
 
 
 def test_model_is_immutable() -> None:
@@ -270,7 +274,7 @@ def test_malformed_sanitized_event_fails_closed() -> None:
                 "confidence": float("nan"),
                 "targets": ["main_quest"],
                 "status": "running",
-                "screenshot": "/tmp/screens/capture-000001.png",
+                "screenshot": TMP + "/tmp/screens/capture-000001.png",
             }
 
     state = app_from_step(MalformedStep())
@@ -350,7 +354,7 @@ def test_direct_construction_cannot_unlock_unrecognized_state() -> None:
         screen_state="unknown",
         confidence=0.99,
         target_names=("main_quest",),
-        screenshot_path="/tmp/screens/capture-000001.png",
+        screenshot_path=TMP + "/tmp/screens/capture-000001.png",
         pause_reason=None,
         recognition_ready=True,
         single_step_verified=True,
@@ -372,7 +376,7 @@ def test_direct_construction_cannot_unlock_low_confidence_state() -> None:
         screen_state="map",
         confidence=0.2,
         target_names=("main_quest",),
-        screenshot_path="/tmp/screens/capture-000001.png",
+        screenshot_path=TMP + "/tmp/screens/capture-000001.png",
         pause_reason=None,
         recognition_ready=True,
         single_step_verified=True,
@@ -393,7 +397,7 @@ def test_direct_construction_cannot_unlock_without_readiness_inputs() -> None:
         screen_state="map",
         confidence=0.99,
         target_names=(),
-        screenshot_path="/tmp/screens/capture-000001.png",
+        screenshot_path=TMP + "/tmp/screens/capture-000001.png",
         pause_reason=None,
         recognition_ready=False,
         single_step_verified=True,
@@ -457,12 +461,12 @@ def test_forged_event_never_retains_unsafe_target_names(unsafe_target) -> None:
     "unsafe_path",
     [
         "relative/screen.png",
-        "/tmp/alice@example.com.png",
-        "/tmp/subprocess failed --token secret.png",
-        "/tmp/subprocess_failed_--token_secret.png",
-        "/tmp/screens/private.txt",
-        "/tmp/screens/../private.png",
-        "/tmp/screens/bad\nrecipient.png",
+        TMP + "/tmp/alice@example.com.png",
+        TMP + "/tmp/subprocess failed --token secret.png",
+        TMP + "/tmp/subprocess_failed_--token_secret.png",
+        TMP + "/tmp/screens/private.txt",
+        TMP + "/tmp/screens/../private.png",
+        TMP + "/tmp/screens/bad\nrecipient.png",
     ],
 )
 def test_forged_event_never_retains_unsafe_screenshot_path(unsafe_path) -> None:
@@ -484,7 +488,7 @@ def test_forged_event_never_retains_unsafe_screenshot_path(unsafe_path) -> None:
 
 def test_direct_construction_discards_unsafe_target_and_path_and_locks() -> None:
     private_target = "alice@example.com"
-    private_path = "/tmp/subprocess failed --token secret.png"
+    private_path = TMP + "/tmp/subprocess failed --token secret.png"
     state = AppViewState(
         mode="continuous",
         status="running",
@@ -586,7 +590,7 @@ def test_from_step_without_trusted_root_discards_screenshot_and_locks() -> None:
 
 
 def test_capture_from_untrusted_parent_is_not_retained() -> None:
-    private_path = "/tmp/raw subprocess output/capture-000001.png"
+    private_path = TMP + "/tmp/raw subprocess output/capture-000001.png"
     step = step_result()
 
     class ForgedStep:
