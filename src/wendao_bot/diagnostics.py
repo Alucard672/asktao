@@ -64,6 +64,7 @@ def run_diagnostics(
     config_path: Path | None,
     runtime_dir: Path,
     backend=None,
+    ocr=None,
 ) -> tuple[Path, list[str]]:
     lines: list[str] = [
         f"问道前台助手诊断报告 {datetime.now(timezone.utc).isoformat()}"
@@ -123,6 +124,7 @@ def run_diagnostics(
                     f"{window.width}x{window.height} —— 请重新“检测模拟器”或修改配置",
                 )
 
+    captured = None
     if config is not None and backend is not None:
         try:
             from .session import GameSession
@@ -131,13 +133,46 @@ def run_diagnostics(
             session = GameSession(
                 backend, config.window_title, config.width, config.height, None, owner
             )
-            data = session.capture()
-            _record(lines, "截屏", True, f"成功，PNG {len(data)} 字节")
+            captured = session.capture()
+            _record(lines, "截屏", True, f"成功，PNG {len(captured)} 字节")
         except Exception as error:
             _record(lines, "截屏", False, f"{type(error).__name__}: {error}")
             failures.append(traceback.format_exc())
 
     _ocr_report(lines)
+
+    if captured is not None and config is not None:
+        import tempfile
+
+        frame = Path(tempfile.mkdtemp(prefix="wendao-diag-")) / "frame.png"
+        frame.write_bytes(captured)
+        try:
+            if ocr is None:
+                from .recognizer import default_ocr as ocr
+
+            text = ocr(frame)
+            _record(lines, "OCR识别", True, f"成功，识别到 {len(text)} 个字符")
+        except Exception as error:
+            _record(lines, "OCR识别", False, f"{type(error).__name__}: {error}")
+            failures.append(traceback.format_exc())
+        else:
+            try:
+                from .app_service import template_path
+                from .recognizer import ScreenRecognizer
+
+                snapshot = ScreenRecognizer(
+                    ocr=ocr,
+                    template_dir=template_path(),
+                    daily_whitelist=config.daily_whitelist,
+                ).classify(frame)
+                _record(
+                    lines, "画面识别", True,
+                    f"state={snapshot.state.value} confidence={snapshot.confidence:.2f} "
+                    f"evidence={sorted(snapshot.evidence)} targets={len(snapshot.targets)}",
+                )
+            except Exception as error:
+                _record(lines, "画面识别", False, f"{type(error).__name__}: {error}")
+                failures.append(traceback.format_exc())
 
     try:
         from .app_service import template_path

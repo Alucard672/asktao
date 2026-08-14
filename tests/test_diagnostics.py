@@ -77,6 +77,38 @@ def test_diagnostics_reports_config_error_without_crashing(tmp_path):
     assert report.is_file()
 
 
+def test_diagnostics_runs_real_ocr_and_classification_on_captured_frame(tmp_path):
+    backend = FakeBackend([window()])
+    seen = []
+
+    def fake_ocr(path):
+        seen.append(path)
+        return "识别文本样例"
+
+    _report, lines = run_diagnostics(
+        config_file(tmp_path), tmp_path / "rt", backend, ocr=fake_ocr
+    )
+
+    joined = "\n".join(lines)
+    assert "[OK] OCR识别" in joined
+    assert "6 个字符" in joined
+    assert "画面识别" in joined
+    assert len(seen) >= 1
+
+
+def test_diagnostics_reports_real_ocr_failure(tmp_path):
+    def broken_ocr(_path):
+        raise RuntimeError("Windows OCR failed: missing module winsdk.windows.storage")
+
+    _report, lines = run_diagnostics(
+        config_file(tmp_path), tmp_path / "rt", FakeBackend([window()]), ocr=broken_ocr
+    )
+
+    joined = "\n".join(lines)
+    assert "[FAIL] OCR识别" in joined
+    assert "winsdk.windows.storage" in joined
+
+
 def test_diagnostics_counts_exact_title_matches(tmp_path):
     other = WindowInfo(8, "MuMu安卓设备 -1", 0, 0, 853, 519, 11, "MuMuPlayer.exe")
     backend = FakeBackend([window(), other])

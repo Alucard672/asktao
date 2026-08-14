@@ -3,6 +3,8 @@
 
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_submodules
+
 
 APP_NAME = "问道前台助手"
 PROJECT_ROOT = Path(SPECPATH).parent
@@ -21,11 +23,7 @@ hiddenimports = [
     "mss",
     "tkinter",
     "winsdk",
-    "winsdk.windows.media.ocr",
-    "winsdk.windows.graphics.imaging",
-    "winsdk.windows.storage.streams",
-    "winsdk.windows.globalization",
-]
+] + collect_submodules("winsdk")
 
 a = Analysis(
     [str(PROJECT_ROOT / "scripts/wendao_app.py")],
