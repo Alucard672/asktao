@@ -465,6 +465,7 @@ class TkView:
         "runtime_folder": "运行目录",
         "notification_preview": "通知预览",
         "check_update": "检查更新",
+        "diagnose": "诊断",
     }
     _BUTTON_ACTIONS = {
         "observe": "observe",
@@ -507,6 +508,30 @@ class TkView:
     def install_buttons(self, controller) -> None:
         for key, action in self._BUTTON_ACTIONS.items():
             self.buttons[key].configure(command=getattr(controller, action))
+
+    def run_diagnostics_flow(self, service) -> None:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        from .diagnostics import run_diagnostics
+
+        try:
+            report, lines = run_diagnostics(
+                service.config_path, service.ensure_runtime_directory()
+            )
+        except Exception as error:
+            messagebox.showerror("诊断", f"诊断执行失败：{error}", parent=self.root)
+            return
+        window = tk.Toplevel(self.root)
+        window.title("诊断结果")
+        window.transient(self.root)
+        text = tk.Text(window, width=88, height=24, wrap="word")
+        text.insert("1.0", "\n".join(lines) + f"\n\n报告已保存：{report}")
+        text.configure(state="disabled")
+        text.pack(fill="both", expand=True, padx=8, pady=8)
+        tk.Button(window, text="关闭", width=10, command=window.destroy).pack(
+            pady=(0, 8)
+        )
 
     def run_update_flow(self, shutdown) -> None:
         import tempfile
@@ -718,6 +743,9 @@ def _build_tk_app(service: AppService):
     view.buttons["check_update"].configure(
         command=lambda: view.run_update_flow(on_close)
     )
+    view.buttons["diagnose"].configure(
+        command=lambda: view.run_diagnostics_flow(service)
+    )
 
     view.root.protocol("WM_DELETE_WINDOW", on_close)
     view.root.after(200, poll)
@@ -726,6 +754,10 @@ def _build_tk_app(service: AppService):
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        from .session_windows import _ensure_dpi_awareness
+
+        _ensure_dpi_awareness()
     service = AppService()
     if sys.platform == "darwin":
         app, retained = _build_native_app(service)
